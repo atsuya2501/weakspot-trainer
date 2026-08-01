@@ -9,7 +9,7 @@ import {
   getAllTagSrs,
   getAllAttempts,
   getQuestionsByTag,
-  countQuestionsByTag,
+  getDueQuestionsByTag,
   clearAllData,
 } from "../db"
 import {
@@ -17,6 +17,7 @@ import {
   selectSessionTags,
   updateRecentAccuracy,
   updateTagSrsAfterSession,
+  scheduleQuestionAfterAnswer,
 } from "../core/srs"
 import { generateQuestions } from "../api/generate"
 
@@ -123,7 +124,11 @@ export const useStore = create<Store>((set, get) => ({
       const sessionQuestions: Question[] = []
 
       for (const [tag, needed] of tagCounts) {
-        const existing = await getQuestionsByTag(tag)
+        const existing = await getDueQuestionsByTag(tag)
+        for (let i = existing.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[existing[i], existing[j]] = [existing[j], existing[i]]
+        }
         const available = existing.slice(0, needed)
         sessionQuestions.push(...available)
 
@@ -140,6 +145,10 @@ export const useStore = create<Store>((set, get) => ({
             sessionQuestions.push(...generated.slice(0, stillNeeded))
           }
         }
+      }
+
+      if (sessionQuestions.length === 0) {
+        throw new Error("問題を生成できませんでした。しばらく待ってから再試行してください。")
       }
 
       // Shuffle to avoid tag clustering
@@ -191,11 +200,20 @@ export const useStore = create<Store>((set, get) => ({
       responseMs,
     }
 
-    await saveAttempt(attempt)
+    const scheduledQuestion = scheduleQuestionAfterAnswer(question, correct, now)
+    await Promise.all([saveAttempt(attempt), saveQuestions([scheduledQuestion])])
+
+    const scheduledQuestions = [...session.questions]
+    scheduledQuestions[session.currentIndex] = scheduledQuestion
 
     const newAttempts = [...session.attempts, attempt]
     set({
-      session: { ...session, attempts: newAttempts, startedAt: now },
+      session: {
+        ...session,
+        questions: scheduledQuestions,
+        attempts: newAttempts,
+        startedAt: now,
+      },
       allAttempts: [...allAttempts, attempt],
     })
   },
@@ -265,7 +283,7 @@ async function refillPoolInBackground(
 ) {
   for (const tag of ALL_TAGS) {
     try {
-      const count = await countQuestionsByTag(tag)
+      const count = (await getDueQuestionsByTag(tag)).length
       if (count < POOL_MIN) {
         const generated = await generateQuestions(tag, difficulty, POOL_MIN * 2, apiKey)
         if (generated.length > 0) await saveQuestions(generated)

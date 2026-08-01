@@ -55,7 +55,7 @@ describe("generateQuestions parsing", () => {
     expect(questions).toHaveLength(1)
   })
 
-  it("discards questions with wrong tag (tag contamination)", async () => {
+  it("retries and rejects when every question has the wrong tag", async () => {
     const wrongTag = [{ ...VALID_RESPONSE[0], tag: "verb_tense" }]
     vi.stubGlobal(
       "fetch",
@@ -68,11 +68,12 @@ describe("generateQuestions parsing", () => {
     )
 
     const { generateQuestions } = await import("./generate")
-    const questions = await generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")
-    expect(questions).toHaveLength(0)
+    await expect(
+      generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")
+    ).rejects.toThrow("did not contain any valid questions")
   })
 
-  it("discards questions without ___ in stem", async () => {
+  it("retries and rejects when every question is missing the blank", async () => {
     const noBlank = [{ ...VALID_RESPONSE[0], stem: "The manager asked the team to submit the report." }]
     vi.stubGlobal(
       "fetch",
@@ -85,8 +86,9 @@ describe("generateQuestions parsing", () => {
     )
 
     const { generateQuestions } = await import("./generate")
-    const questions = await generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")
-    expect(questions).toHaveLength(0)
+    await expect(
+      generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")
+    ).rejects.toThrow("did not contain any valid questions")
   })
 
   it("deduplicates stems with same first 40 chars", async () => {

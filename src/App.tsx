@@ -12,7 +12,7 @@ export default function App() {
 
   useEffect(() => {
     init()
-  }, [])
+  }, [init])
 
   return (
     <div className="min-h-screen bg-slate-900 text-white max-w-lg mx-auto">

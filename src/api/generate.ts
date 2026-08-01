@@ -7,7 +7,8 @@ const SYSTEM_PROMPT = `You are a professional TOEIC Part 5 question creator. You
 Rules:
 - Output ONLY a JSON array. No markdown fences, no explanation, no code blocks.
 - Each question must test the EXACT grammar/collocation tag specified.
-- Do NOT create pure vocabulary questions (questions that only test if the user knows a rare word).
+- Do NOT create basic word-form questions where the answer is obvious only from the missing part of speech.
+- Prefer realistic business contexts and test grammar, usage, sentence structure, or contextual meaning.
 - stem: one sentence with a blank represented as ___ (exactly 3 underscores).
 - choices: exactly 4 options. Make distractors plausible — especially for collocation tags, use "grammatically possible but idiomatically wrong" distractors.
 - answerIndex: 0-3 (index of the correct choice).
@@ -16,10 +17,33 @@ Rules:
 - tag must exactly match one of: ${ALL_TAGS.join(", ")}
 
 Output format (JSON array only):
-[{"stem":"...","choices":["A","B","C","D"],"answerIndex":0,"explanation":"...","tag":"word_form","difficulty":2}]`
+[{"stem":"...","choices":["A","B","C","D"],"answerIndex":0,"explanation":"...","tag":"fifth_sentence_pattern","difficulty":2}]`
+
+const TAG_INSTRUCTIONS: Partial<Record<GrammarTag, string>> = {
+  preposition_collocation:
+    "Focus on verbs, adjectives, or nouns that govern a specific preposition. Use distractors that are grammatically possible but violate the required usage or collocation.",
+  fifth_sentence_pattern:
+    "Focus on SVOC patterns and verbs taking an object complement: make/keep/find/consider/appoint/elect/enable/allow/require and similar TOEIC usage. Test the required form of C and distinguish SVOC from other patterns.",
+  complex_passive:
+    "Focus on passive transformations of SVOO and SVOC. Include sentences where one object or an object complement remains after passivization, such as be given an assignment, be elected chair, or be required to submit. Make the remaining O/C relationship central to the answer.",
+  wh_ever_clause:
+    "Focus on whoever/whomever/whatever/whichever/whenever/wherever/however introducing adverbial or concessive clauses. Test both clause completeness and the word's grammatical role; contrast them with no matter forms and ordinary wh-words when appropriate.",
+  transitive_intransitive:
+    "Test transitive versus intransitive verb usage, including whether a preposition is required and commonly confused pairs such as rise/raise and lie/lay.",
+  sentence_structure:
+    "Test TOEIC-relevant sentence constructions and complementation patterns rather than simple part-of-speech identification.",
+  context_usage:
+    "Require the surrounding business context to choose among grammatically plausible options; avoid rare-word trivia.",
+  conjunction:
+    "Contrast conjunctions, prepositions, and conjunctive adverbs by testing whether what follows is a clause or noun phrase and how clauses are connected.",
+  passive_voice:
+    "Test voice choice and passive constructions in context; avoid questions solvable only by spotting be + past participle.",
+}
 
 function buildPrompt(tag: GrammarTag, difficulty: number, count: number): string {
-  return `Generate ${count} TOEIC Part 5 questions testing the "${tag}" category at difficulty level ${difficulty}. Return only the JSON array.`
+  const focus = TAG_INSTRUCTIONS[tag] ??
+    "Create a usage-focused question that requires understanding the sentence, not merely identifying a missing part of speech."
+  return `Generate ${count} TOEIC Part 5 questions testing the "${tag}" category at difficulty level ${difficulty}. Focus: ${focus} Return only the JSON array.`
 }
 
 function extractJson(text: string): string {
@@ -110,6 +134,10 @@ export async function generateQuestions(
           createdAt: Date.now(),
           source: "generated",
         })
+      }
+
+      if (questions.length === 0) {
+        throw new Error("API response did not contain any valid questions")
       }
 
       return questions

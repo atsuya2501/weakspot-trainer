@@ -42,6 +42,14 @@ export async function getQuestionsByTag(tag: GrammarTag): Promise<Question[]> {
   return db.getAllFromIndex("questions", "tag", tag)
 }
 
+export async function getDueQuestionsByTag(
+  tag: GrammarTag,
+  now: number = Date.now()
+): Promise<Question[]> {
+  const questions = await getQuestionsByTag(tag)
+  return questions.filter((q) => q.nextDueAt === undefined || q.nextDueAt <= now)
+}
+
 export async function getAllQuestions(): Promise<Question[]> {
   const db = await getDB()
   return db.getAll("questions")

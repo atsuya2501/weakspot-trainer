@@ -1,5 +1,21 @@
-import type { GrammarTag, TagSrs } from "../types"
-import { ALL_TAGS } from "../types"
+import type { GrammarTag, Question, TagSrs } from "../types"
+import { ALL_TAGS, TAG_WEIGHTS } from "../types"
+
+export const CORRECT_QUESTION_INTERVAL_DAYS = 10
+
+export function scheduleQuestionAfterAnswer(
+  question: Question,
+  correct: boolean,
+  now: number = Date.now()
+): Question {
+  return {
+    ...question,
+    lastAnsweredAt: now,
+    nextDueAt: correct
+      ? now + CORRECT_QUESTION_INTERVAL_DAYS * 86_400_000
+      : now,
+  }
+}
 
 export function createInitialTagSrs(tag: GrammarTag): TagSrs {
   return {
@@ -80,8 +96,12 @@ export function selectSessionTags(
   )
 
   const result: GrammarTag[] = []
-  const primaryPool = [...dueAndWeak, ...weakNotDue]
-  const allPooled = [...primaryPool, ...untouched, ...confident]
+  const expandByWeight = (tags: GrammarTag[]) =>
+    tags.flatMap((tag) => Array(TAG_WEIGHTS[tag]).fill(tag) as GrammarTag[])
+  const primaryPool = expandByWeight([...dueAndWeak, ...weakNotDue])
+  const untouchedPool = expandByWeight(untouched)
+  const confidentPool = expandByWeight(confident)
+  const allPooled = [...primaryPool, ...untouchedPool, ...confidentPool]
 
   // Slots: reserve 1 for untouched (if any) and 1 for confident (if any)
   const hasUntouched = untouched.length > 0
@@ -96,26 +116,26 @@ export function selectSessionTags(
     }
   } else if (allPooled.length > 0) {
     // No weak/due tags — fill from whatever is available
-    for (let i = 0; result.length < targetPrimary; i++) {
-      result.push(allPooled[i % allPooled.length])
+    while (result.length < targetPrimary) {
+      result.push(allPooled[Math.floor(Math.random() * allPooled.length)])
     }
   }
 
   // Add one untouched
   if (hasUntouched) {
-    result.push(untouched[Math.floor(Math.random() * untouched.length)])
+    result.push(untouchedPool[Math.floor(Math.random() * untouchedPool.length)])
   }
 
   // Add one confident (retention check)
   if (hasConfident) {
-    result.push(confident[Math.floor(Math.random() * confident.length)])
+    result.push(confidentPool[Math.floor(Math.random() * confidentPool.length)])
   } else if (allPooled.length > 0 && result.length < sessionSize) {
     result.push(allPooled[0])
   }
 
   // Final fill if still short (edge case: very few total tags)
   while (result.length < sessionSize && allPooled.length > 0) {
-    result.push(allPooled[result.length % allPooled.length])
+    result.push(allPooled[Math.floor(Math.random() * allPooled.length)])
   }
 
   return result.slice(0, sessionSize)

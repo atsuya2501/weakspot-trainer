@@ -4,9 +4,38 @@ import {
   updateRecentAccuracy,
   updateTagSrsAfterSession,
   selectSessionTags,
+  scheduleQuestionAfterAnswer,
 } from "./srs"
 import type { TagSrs } from "../types"
-import { ALL_TAGS } from "../types"
+import { ALL_TAGS, TAG_WEIGHTS } from "../types"
+import type { Question } from "../types"
+
+const question: Question = {
+  id: "q1",
+  stem: "The answer is ___.",
+  choices: ["a", "b", "c", "d"],
+  answerIndex: 0,
+  explanation: "test",
+  tag: "verb_tense",
+  difficulty: 1,
+  createdAt: 0,
+  source: "generated",
+}
+
+describe("scheduleQuestionAfterAnswer", () => {
+  const now = 1_000_000
+
+  it("makes a wrong answer immediately due", () => {
+    const scheduled = scheduleQuestionAfterAnswer(question, false, now)
+    expect(scheduled.nextDueAt).toBe(now)
+    expect(scheduled.lastAnsweredAt).toBe(now)
+  })
+
+  it("schedules a correct answer ten days later", () => {
+    const scheduled = scheduleQuestionAfterAnswer(question, true, now)
+    expect(scheduled.nextDueAt).toBe(now + 10 * 86_400_000)
+  })
+})
 
 describe("createInitialTagSrs", () => {
   it("sets default values", () => {
@@ -63,6 +92,14 @@ describe("updateTagSrsAfterSession", () => {
 })
 
 describe("selectSessionTags", () => {
+  it("excludes basic word-form drills and prioritizes personal weak spots", () => {
+    expect(ALL_TAGS).not.toContain("word_form")
+    expect(TAG_WEIGHTS.preposition_collocation).toBeGreaterThan(TAG_WEIGHTS.comparison)
+    expect(TAG_WEIGHTS.fifth_sentence_pattern).toBe(5)
+    expect(TAG_WEIGHTS.complex_passive).toBe(5)
+    expect(TAG_WEIGHTS.wh_ever_clause).toBe(5)
+  })
+
   it("returns requested number of tags", () => {
     const map = new Map<string, TagSrs>()
     const tags = selectSessionTags(map as any, 10)
