@@ -36,6 +36,12 @@ describe("generateQuestions parsing", () => {
     expect([0, 1, 2, 3]).toContain(questions[0].answerIndex)
     expect(questions[0].id).toBeTruthy()
     expect(questions[0].source).toBe("generated")
+
+    const request = mockFetch.mock.calls[0][1]
+    const body = JSON.parse(request.body as string)
+    expect(body.messages[0].content).toContain("Learner profile")
+    expect(body.messages[0].content).toContain("verb complementation and valency")
+    expect(body.messages[0].content).toContain("passive transformations")
   })
 
   it("strips markdown fences from response", async () => {

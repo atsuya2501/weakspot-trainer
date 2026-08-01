@@ -19,31 +19,53 @@ Rules:
 Output format (JSON array only):
 [{"stem":"...","choices":["A","B","C","D"],"answerIndex":0,"explanation":"...","tag":"fifth_sentence_pattern","difficulty":2}]`
 
+const PERSONAL_WEAKNESS_PROFILE = `This learner's error history shows these recurring traps. When relevant to the requested tag, deliberately create NEW questions that test the same reasoning pattern without copying source-book wording:
+- governed prepositions and fixed frames: adjective/verb/noun + preposition, preposition + noun, and multiword frames; make all distractors locally plausible
+- verb complementation and valency: V + O, V + O + C, V + O + to-infinitive, V + bare infinitive, V + gerund, and whether a preposition is required
+- passive transformations: SVOO/SVOC passives with an object or complement left after the passive verb; causative verbs whose infinitive changes in the passive
+- clause connectors: distinguish conjunction + clause, preposition + noun phrase, and conjunctive adverb punctuation; include contrast, reason, condition, result, and in-that style meaning
+- participial and reduced clauses: active versus passive relationship, perfect participles, and choosing a finite clause when reduction is impossible
+- agreement and count structure: a number of + plural, collective/count nouns, and agreement with the true head noun
+- tense and voice must be decided from time sequence and argument structure, not from surface keywords
+- derivational choices are allowed only when usage, valency, or context is the real test; never ask an elementary suffix-only question
+- explanations must identify the sentence structure (S/V/O/C or clause boundary when helpful) and state the exact rule that rejects the strongest distractor.
+Vary vocabulary and business situations. Do not repeatedly reuse the same collocation or example verb.`
+
 const TAG_INSTRUCTIONS: Partial<Record<GrammarTag, string>> = {
   preposition_collocation:
-    "Focus on verbs, adjectives, or nouns that govern a specific preposition. Use distractors that are grammatically possible but violate the required usage or collocation.",
+    "Focus on verbs, adjectives, or nouns that govern a specific preposition, plus multiword prepositional frames expressing direction, duration, substitution, proximity, basis, or purpose. Use distractors that are grammatically possible but violate the required meaning or collocation.",
   fifth_sentence_pattern:
-    "Focus on SVOC patterns and verbs taking an object complement: make/keep/find/consider/appoint/elect/enable/allow/require and similar TOEIC usage. Test the required form of C and distinguish SVOC from other patterns.",
+    "Focus on SVOC patterns and verbs taking an object complement: make/keep/find/consider/appoint/elect/enable/allow/require/leave and similar TOEIC usage. Test whether C is a noun, adjective, bare infinitive, to-infinitive, or participle and distinguish SVOC from SVOO/SVO.",
   complex_passive:
-    "Focus on passive transformations of SVOO and SVOC. Include sentences where one object or an object complement remains after passivization, such as be given an assignment, be elected chair, or be required to submit. Make the remaining O/C relationship central to the answer.",
+    "Focus on passive transformations of SVOO and SVOC. Include sentences where one object or an object complement remains after passivization and causatives such as make O do becoming be made to do. Make the remaining O/C relationship and required complement form central to the answer.",
   wh_ever_clause:
     "Focus on whoever/whomever/whatever/whichever/whenever/wherever/however introducing adverbial or concessive clauses. Test both clause completeness and the word's grammatical role; contrast them with no matter forms and ordinary wh-words when appropriate.",
   transitive_intransitive:
-    "Test transitive versus intransitive verb usage, including whether a preposition is required and commonly confused pairs such as rise/raise and lie/lay.",
+    "Test transitive versus intransitive verb usage, including whether a preposition is required, the object pattern of award/assign/provide/offer/remind/allow, and commonly confused pairs such as rise/raise and lie/lay.",
   sentence_structure:
-    "Test TOEIC-relevant sentence constructions and complementation patterns rather than simple part-of-speech identification.",
+    "Test TOEIC-relevant constructions and complementation patterns: help/make/allow/remind/intend/happen, result and reason constructions, dummy subjects, and finite versus nonfinite clauses. Require structural analysis rather than simple part-of-speech identification.",
   context_usage:
     "Require the surrounding business context to choose among grammatically plausible options; avoid rare-word trivia.",
   conjunction:
-    "Contrast conjunctions, prepositions, and conjunctive adverbs by testing whether what follows is a clause or noun phrase and how clauses are connected.",
+    "Contrast conjunctions, prepositions, and conjunctive adverbs by testing whether what follows is a clause or noun phrase and how clauses are connected. Include contrast, reason, condition, result, concession, and expressions such as whereas, since, unless, so...that, and in that, but create original sentences.",
   passive_voice:
-    "Test voice choice and passive constructions in context; avoid questions solvable only by spotting be + past participle.",
+    "Test voice choice and passive constructions in context, including be reminded to, be intended to, have/has been + past participle, and leave O C in the passive. Avoid questions solvable only by spotting be + past participle.",
+  participle:
+    "Test active/passive relationships in reduced clauses, present versus past participles, perfect participles, and cases where a full finite clause is required. Include the logical subject in the explanation.",
+  subject_verb_agree:
+    "Test agreement with the true head noun, especially a number of + plural, intervening prepositional phrases, quantities, and collective nouns.",
+  verb_collocation:
+    "Test the verb and complement/preposition as one usage unit. Favor business verbs whose object pattern is easy to confuse, and reject distractors by both meaning and valency.",
+  infinitive_gerund:
+    "Test the complement selected by a verb or construction, including bare infinitive versus to-infinitive in active/passive causatives, gerunds after fixed expressions, and purpose/result infinitives.",
+  verb_tense:
+    "Require a timeline: earlier past versus later past, present relevance, scheduled future, and voice. Do not make a single time adverb the only clue.",
 }
 
 function buildPrompt(tag: GrammarTag, difficulty: number, count: number): string {
   const focus = TAG_INSTRUCTIONS[tag] ??
     "Create a usage-focused question that requires understanding the sentence, not merely identifying a missing part of speech."
-  return `Generate ${count} TOEIC Part 5 questions testing the "${tag}" category at difficulty level ${difficulty}. Focus: ${focus} Return only the JSON array.`
+  return `Generate ${count} TOEIC Part 5 questions testing the "${tag}" category at difficulty level ${difficulty}.\n\nLearner profile:\n${PERSONAL_WEAKNESS_PROFILE}\n\nTag focus: ${focus}\nReturn only the JSON array.`
 }
 
 function extractJson(text: string): string {
