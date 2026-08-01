@@ -23,6 +23,7 @@ export type GrammarTag =
   | "modification"
   | "parallelism"
   | "context_usage"
+  | "inversion_emphasis"
 
 export const ALL_TAGS: GrammarTag[] = [
   "verb_tense",
@@ -48,6 +49,7 @@ export const ALL_TAGS: GrammarTag[] = [
   "modification",
   "parallelism",
   "context_usage",
+  "inversion_emphasis",
 ]
 
 // Personal weak spots take priority; the remaining weights roughly follow
@@ -55,9 +57,9 @@ export const ALL_TAGS: GrammarTag[] = [
 export const TAG_WEIGHTS: Record<GrammarTag, number> = {
   verb_tense: 3,
   subject_verb_agree: 3,
-  relative_clause: 1,
+  relative_clause: 5,
   participle: 3,
-  comparison: 1,
+  comparison: 5,
   conditionals: 1,
   infinitive_gerund: 2,
   passive_voice: 4,
@@ -71,12 +73,13 @@ export const TAG_WEIGHTS: Record<GrammarTag, number> = {
   confusing_pairs: 4,
   fifth_sentence_pattern: 5,
   complex_passive: 5,
-  wh_ever_clause: 5,
+  wh_ever_clause: 6,
   transitive_intransitive: 4,
-  sentence_structure: 5,
+  sentence_structure: 6,
   modification: 3,
   parallelism: 1,
   context_usage: 4,
+  inversion_emphasis: 6,
 }
 
 export const TAG_LABELS: Record<GrammarTag, string> = {
@@ -104,6 +107,7 @@ export const TAG_LABELS: Record<GrammarTag, string> = {
   modification: "修飾",
   parallelism: "パラレリズム",
   context_usage: "文脈・語法",
+  inversion_emphasis: "倒置・強調構文",
 }
 
 export interface Question {

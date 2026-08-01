@@ -97,7 +97,8 @@ describe("selectSessionTags", () => {
     expect(TAG_WEIGHTS.preposition_collocation).toBeGreaterThan(TAG_WEIGHTS.comparison)
     expect(TAG_WEIGHTS.fifth_sentence_pattern).toBe(5)
     expect(TAG_WEIGHTS.complex_passive).toBe(5)
-    expect(TAG_WEIGHTS.wh_ever_clause).toBe(5)
+    expect(TAG_WEIGHTS.wh_ever_clause).toBe(6)
+    expect(TAG_WEIGHTS.inversion_emphasis).toBe(6)
   })
 
   it("returns requested number of tags", () => {
