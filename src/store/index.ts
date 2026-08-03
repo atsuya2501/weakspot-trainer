@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { v4 as uuidv4 } from "uuid"
 import type { GrammarTag, Question, Attempt, TagSrs, Screen, Settings } from "../types"
-import { ALL_TAGS } from "../types"
+import { ALL_TAGS, CURRENT_GENERATION_VERSION } from "../types"
 import {
   saveQuestions,
   saveAttempt,
@@ -10,6 +10,7 @@ import {
   getAllAttempts,
   getQuestionsByTag,
   getDueQuestionsByTag,
+  deleteStaleUnansweredQuestions,
   clearAllData,
 } from "../db"
 import {
@@ -64,6 +65,7 @@ interface Store {
   updateSettings: (patch: Partial<Settings>) => void
   startSession: () => Promise<void>
   submitAnswer: (selectedIndex: number) => Promise<void>
+  submitReviewAnswer: (question: Question, selectedIndex: number) => Promise<void>
   finishSession: () => Promise<void>
   clearData: () => Promise<void>
   getWrongQuestions: (tag: GrammarTag) => Promise<Question[]>
@@ -83,6 +85,10 @@ export const useStore = create<Store>((set, get) => ({
       getAllTagSrs(),
       getAllAttempts(),
     ])
+    await deleteStaleUnansweredQuestions(
+      new Set(attempts.map((attempt) => attempt.questionId)),
+      CURRENT_GENERATION_VERSION
+    )
     const srsMap = new Map<GrammarTag, TagSrs>()
     for (const srs of srsList) srsMap.set(srs.tag, srs)
     set({ srsMap, allAttempts: attempts })
@@ -218,6 +224,44 @@ export const useStore = create<Store>((set, get) => ({
     })
   },
 
+  submitReviewAnswer: async (question, selectedIndex) => {
+    const { allAttempts, srsMap } = get()
+    const now = Date.now()
+    const correct = selectedIndex === question.answerIndex
+    const attempt: Attempt = {
+      id: uuidv4(),
+      questionId: question.id,
+      tag: question.tag,
+      selectedIndex,
+      correct,
+      answeredAt: now,
+      responseMs: 0,
+    }
+    const scheduledQuestion = scheduleQuestionAfterAnswer(question, correct, now)
+    const nextAttempts = [...allAttempts, attempt]
+    const tagResults = nextAttempts
+      .filter((item) => item.tag === question.tag)
+      .map((item) => item.correct)
+    const existing = srsMap.get(question.tag) ?? createInitialTagSrs(question.tag)
+    const updatedSrs = updateTagSrsAfterSession(
+      {
+        ...existing,
+        recentAccuracy: updateRecentAccuracy(tagResults),
+        attemptCount: existing.attemptCount + 1,
+      },
+      correct ? 1 : 0,
+      now
+    )
+    await Promise.all([
+      saveAttempt(attempt),
+      saveQuestions([scheduledQuestion]),
+      saveTagSrs(updatedSrs),
+    ])
+    const nextSrsMap = new Map(srsMap)
+    nextSrsMap.set(question.tag, updatedSrs)
+    set({ allAttempts: nextAttempts, srsMap: nextSrsMap })
+  },
+
   finishSession: async () => {
     const { session, srsMap } = get()
     if (!session) return
@@ -266,10 +310,18 @@ export const useStore = create<Store>((set, get) => ({
 
   getWrongQuestions: async (tag: GrammarTag) => {
     const { allAttempts } = get()
+    const latestByQuestion = new Map<string, Attempt>()
+    for (const attempt of allAttempts) {
+      if (attempt.tag !== tag) continue
+      const latest = latestByQuestion.get(attempt.questionId)
+      if (!latest || attempt.answeredAt > latest.answeredAt) {
+        latestByQuestion.set(attempt.questionId, attempt)
+      }
+    }
     const wrongIds = new Set(
-      allAttempts
-        .filter((a) => a.tag === tag && !a.correct)
-        .map((a) => a.questionId)
+      [...latestByQuestion.values()]
+        .filter((attempt) => !attempt.correct)
+        .map((attempt) => attempt.questionId)
     )
     const questions = await getQuestionsByTag(tag)
     return questions.filter((q) => wrongIds.has(q.id))

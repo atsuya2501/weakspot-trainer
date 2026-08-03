@@ -7,7 +7,7 @@ import { TagBar } from "../components/TagBar"
 import { ChoiceButton } from "../components/ChoiceButton"
 
 export function AnalysisScreen() {
-  const { srsMap, getWrongQuestions } = useStore()
+  const { srsMap, getWrongQuestions, submitReviewAnswer } = useStore()
   const [reviewTag, setReviewTag] = useState<GrammarTag | null>(null)
   const [reviewQuestions, setReviewQuestions] = useState<Question[]>([])
   const [reviewIndex, setReviewIndex] = useState(0)
@@ -75,7 +75,11 @@ export function AnalysisScreen() {
               selected={selectedIndex === i}
               correct={correct}
               isAnswer={i === q.answerIndex}
-              onClick={() => { setSelectedIndex(i); setRevealed(true) }}
+              onClick={async () => {
+                setSelectedIndex(i)
+                setRevealed(true)
+                await submitReviewAnswer(q, i)
+              }}
               disabled={revealed}
             />
           ))}

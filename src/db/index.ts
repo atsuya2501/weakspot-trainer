@@ -62,6 +62,28 @@ export async function countQuestionsByTag(
   return db.countFromIndex("questions", "tag", tag)
 }
 
+export async function deleteStaleUnansweredQuestions(
+  attemptedQuestionIds: Set<string>,
+  currentVersion: number
+): Promise<number> {
+  const db = await getDB()
+  const questions = await db.getAll("questions") as Question[]
+  const staleIds = questions
+    .filter(
+      (q) =>
+        (q.generationVersion ?? 0) < currentVersion &&
+        !attemptedQuestionIds.has(q.id)
+    )
+    .map((q) => q.id)
+
+  if (staleIds.length === 0) return 0
+
+  const tx = db.transaction("questions", "readwrite")
+  await Promise.all(staleIds.map((id) => tx.store.delete(id)))
+  await tx.done
+  return staleIds.length
+}
+
 // Attempts
 export async function saveAttempt(attempt: Attempt): Promise<void> {
   const db = await getDB()

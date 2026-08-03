@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid"
 import type { GrammarTag, Question } from "../types"
-import { ALL_TAGS } from "../types"
+import { ALL_TAGS, CURRENT_GENERATION_VERSION } from "../types"
+
+const API_URL = "https://api.anthropic.com/v1/messages"
+const MODEL = "claude-sonnet-4-6"
 
 const SYSTEM_PROMPT = `You are a professional TOEIC Part 5 question creator. Your job is to generate realistic TOEIC Part 5 sentence completion questions.
 
@@ -94,15 +97,72 @@ function isValidQuestion(obj: unknown, expectedTag: GrammarTag): obj is Omit<Que
   const q = obj as Record<string, unknown>
   return (
     typeof q.stem === "string" &&
-    q.stem.includes("___") &&
+    q.stem.split("___").length === 2 &&
     Array.isArray(q.choices) &&
     q.choices.length === 4 &&
+    q.choices.every((choice) => typeof choice === "string" && choice.trim().length > 0) &&
+    new Set(q.choices).size === 4 &&
     typeof q.answerIndex === "number" &&
+    Number.isInteger(q.answerIndex) &&
     [0, 1, 2, 3].includes(q.answerIndex) &&
     typeof q.explanation === "string" &&
+    q.explanation.trim().length >= 20 &&
     q.tag === expectedTag &&
     [1, 2, 3].includes(q.difficulty as number)
   )
+}
+
+function responseText(data: {
+  content?: Array<{ type?: string; text?: string }>
+}): string {
+  return (data.content ?? [])
+    .filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("")
+}
+
+async function reviewQuestionQuality(
+  questions: Array<Omit<Question, "id" | "createdAt" | "source">>,
+  tag: GrammarTag,
+  apiKey: string
+): Promise<boolean[]> {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1200,
+      system: `You are a strict TOEIC Part 5 question verifier. Return ONLY a JSON array in the form [{"index":0,"valid":true,"reason":""}]. Mark valid=false if the sentence is unnatural, more than one choice can be correct, the answerIndex is wrong, the explanation is inaccurate, or the question does not genuinely test the requested tag. Judge every item.`,
+      messages: [{
+        role: "user",
+        content: `Requested tag: ${tag}\nVerify these candidates:\n${JSON.stringify(questions)}`,
+      }],
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Quality review API error ${res.status}: ${err}`)
+  }
+
+  const data = await res.json()
+  const parsed = JSON.parse(extractJson(responseText(data))) as unknown
+  if (!Array.isArray(parsed)) throw new Error("Invalid quality review response")
+
+  const verdicts = new Map<number, boolean>()
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue
+    const verdict = item as Record<string, unknown>
+    if (Number.isInteger(verdict.index) && typeof verdict.valid === "boolean") {
+      verdicts.set(verdict.index as number, verdict.valid)
+    }
+  }
+  return questions.map((_, index) => verdicts.get(index) === true)
 }
 
 export async function generateQuestions(
@@ -115,7 +175,7 @@ export async function generateQuestions(
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -124,7 +184,7 @@ export async function generateQuestions(
           "anthropic-dangerous-direct-browser-access": "true",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: MODEL,
           max_tokens: 1500,
           system: SYSTEM_PROMPT,
           messages: [
@@ -139,15 +199,12 @@ export async function generateQuestions(
       }
 
       const data = await res.json()
-      const text = data.content
-        .filter((b: { type: string }) => b.type === "text")
-        .map((b: { text: string }) => b.text)
-        .join("")
+      const text = responseText(data)
 
       const jsonStr = extractJson(text)
       const parsed = JSON.parse(jsonStr) as unknown[]
 
-      const questions: Question[] = []
+      const candidates: Array<Omit<Question, "id" | "createdAt" | "source">> = []
       const seen = new Set<string>()
 
       for (const item of parsed) {
@@ -155,21 +212,33 @@ export async function generateQuestions(
         const key = item.stem.slice(0, 40)
         if (seen.has(key)) continue
         seen.add(key)
-        questions.push({
-          id: uuidv4(),
+        candidates.push({
           stem: item.stem,
           choices: item.choices as [string, string, string, string],
           answerIndex: item.answerIndex as 0 | 1 | 2 | 3,
           explanation: item.explanation,
           tag: item.tag,
           difficulty: item.difficulty as 1 | 2 | 3,
-          createdAt: Date.now(),
-          source: "generated",
         })
       }
 
-      if (questions.length === 0) {
+      if (candidates.length === 0) {
         throw new Error("API response did not contain any valid questions")
+      }
+
+      const verdicts = await reviewQuestionQuality(candidates, tag, apiKey)
+      const questions: Question[] = candidates
+        .filter((_, index) => verdicts[index])
+        .map((item) => ({
+          ...item,
+          id: uuidv4(),
+          createdAt: Date.now(),
+          source: "generated" as const,
+          generationVersion: CURRENT_GENERATION_VERSION,
+        }))
+
+      if (questions.length === 0) {
+        throw new Error("All generated questions failed quality review")
       }
 
       return questions

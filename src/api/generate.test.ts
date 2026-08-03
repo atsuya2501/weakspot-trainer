@@ -12,18 +12,24 @@ const VALID_RESPONSE = [
   },
 ]
 
+const QUALITY_RESPONSE = [{ index: 0, valid: true, reason: "" }]
+
+function anthropicResponse(text: string) {
+  return {
+    ok: true,
+    json: async () => ({ content: [{ type: "text", text }] }),
+  }
+}
+
 describe("generateQuestions parsing", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn())
   })
 
   it("parses a clean JSON array response", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{ type: "text", text: JSON.stringify(VALID_RESPONSE) }],
-      }),
-    })
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(anthropicResponse(JSON.stringify(VALID_RESPONSE)))
+      .mockResolvedValueOnce(anthropicResponse(JSON.stringify(QUALITY_RESPONSE)))
     vi.stubGlobal("fetch", mockFetch)
 
     const { generateQuestions } = await import("./generate")
@@ -36,6 +42,7 @@ describe("generateQuestions parsing", () => {
     expect([0, 1, 2, 3]).toContain(questions[0].answerIndex)
     expect(questions[0].id).toBeTruthy()
     expect(questions[0].source).toBe("generated")
+    expect(questions[0].generationVersion).toBeGreaterThan(0)
 
     const request = mockFetch.mock.calls[0][1]
     const body = JSON.parse(request.body as string)
@@ -48,12 +55,9 @@ describe("generateQuestions parsing", () => {
     const fenced = "```json\n" + JSON.stringify(VALID_RESPONSE) + "\n```"
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          content: [{ type: "text", text: fenced }],
-        }),
-      })
+      vi.fn()
+        .mockResolvedValueOnce(anthropicResponse(fenced))
+        .mockResolvedValueOnce(anthropicResponse(JSON.stringify(QUALITY_RESPONSE)))
     )
 
     const { generateQuestions } = await import("./generate")
@@ -104,12 +108,9 @@ describe("generateQuestions parsing", () => {
     ]
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          content: [{ type: "text", text: JSON.stringify(duplicate) }],
-        }),
-      })
+      vi.fn()
+        .mockResolvedValueOnce(anthropicResponse(JSON.stringify(duplicate)))
+        .mockResolvedValueOnce(anthropicResponse(JSON.stringify(QUALITY_RESPONSE)))
     )
 
     const { generateQuestions } = await import("./generate")
@@ -130,6 +131,23 @@ describe("generateQuestions parsing", () => {
 
     const { generateQuestions } = await import("./generate")
     await expect(generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")).rejects.toThrow()
+  })
+
+  it("retries when the quality reviewer rejects every candidate", async () => {
+    const rejected = JSON.stringify([{ index: 0, valid: false, reason: "ambiguous" }])
+    const mockFetch = vi.fn()
+    for (let i = 0; i < 3; i++) {
+      mockFetch
+        .mockResolvedValueOnce(anthropicResponse(JSON.stringify(VALID_RESPONSE)))
+        .mockResolvedValueOnce(anthropicResponse(rejected))
+    }
+    vi.stubGlobal("fetch", mockFetch)
+
+    const { generateQuestions } = await import("./generate")
+    await expect(
+      generateQuestions("infinitive_gerund", 2, 1, "sk-test-key")
+    ).rejects.toThrow("failed quality review")
+    expect(mockFetch).toHaveBeenCalledTimes(6)
   })
 
   it("throws on non-ok API response", async () => {

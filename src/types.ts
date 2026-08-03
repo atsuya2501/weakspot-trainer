@@ -52,6 +52,8 @@ export const ALL_TAGS: GrammarTag[] = [
   "inversion_emphasis",
 ]
 
+export const CURRENT_GENERATION_VERSION = 3
+
 // Personal weak spots take priority; the remaining weights roughly follow
 // the category balance of the user's TOEIC grammar workbook.
 export const TAG_WEIGHTS: Record<GrammarTag, number> = {
@@ -122,6 +124,10 @@ export interface Question {
   source: "generated"
   lastAnsweredAt?: number
   nextDueAt?: number
+  correctStreak?: number
+  reviewCount?: number
+  intervalDays?: number
+  generationVersion?: number
 }
 
 export interface Attempt {

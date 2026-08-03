@@ -1,19 +1,26 @@
 import type { GrammarTag, Question, TagSrs } from "../types"
 import { ALL_TAGS, TAG_WEIGHTS } from "../types"
 
-export const CORRECT_QUESTION_INTERVAL_DAYS = 10
+export const QUESTION_INTERVAL_DAYS = [3, 10, 30] as const
 
 export function scheduleQuestionAfterAnswer(
   question: Question,
   correct: boolean,
   now: number = Date.now()
 ): Question {
+  const previousStreak = question.correctStreak ?? 0
+  const correctStreak = correct ? previousStreak + 1 : 0
+  const intervalDays = correct
+    ? QUESTION_INTERVAL_DAYS[Math.min(correctStreak - 1, QUESTION_INTERVAL_DAYS.length - 1)]
+    : 0
+
   return {
     ...question,
     lastAnsweredAt: now,
-    nextDueAt: correct
-      ? now + CORRECT_QUESTION_INTERVAL_DAYS * 86_400_000
-      : now,
+    nextDueAt: now + intervalDays * 86_400_000,
+    correctStreak,
+    reviewCount: (question.reviewCount ?? 0) + 1,
+    intervalDays,
   }
 }
 

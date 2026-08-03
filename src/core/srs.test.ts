@@ -31,9 +31,22 @@ describe("scheduleQuestionAfterAnswer", () => {
     expect(scheduled.lastAnsweredAt).toBe(now)
   })
 
-  it("schedules a correct answer ten days later", () => {
-    const scheduled = scheduleQuestionAfterAnswer(question, true, now)
-    expect(scheduled.nextDueAt).toBe(now + 10 * 86_400_000)
+  it("uses 3, 10, and 30 day intervals for consecutive correct answers", () => {
+    const first = scheduleQuestionAfterAnswer(question, true, now)
+    const second = scheduleQuestionAfterAnswer(first, true, now)
+    const third = scheduleQuestionAfterAnswer(second, true, now)
+    expect(first.nextDueAt).toBe(now + 3 * 86_400_000)
+    expect(second.nextDueAt).toBe(now + 10 * 86_400_000)
+    expect(third.nextDueAt).toBe(now + 30 * 86_400_000)
+    expect(third.correctStreak).toBe(3)
+  })
+
+  it("resets the streak after a wrong answer", () => {
+    const learned = { ...question, correctStreak: 2, intervalDays: 10 }
+    const scheduled = scheduleQuestionAfterAnswer(learned, false, now)
+    expect(scheduled.nextDueAt).toBe(now)
+    expect(scheduled.correctStreak).toBe(0)
+    expect(scheduled.intervalDays).toBe(0)
   })
 })
 
