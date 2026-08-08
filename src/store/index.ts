@@ -12,7 +12,10 @@ import {
   getDueQuestionsByTag,
   deleteStaleUnansweredQuestions,
   clearAllData,
+  getLearningDataSnapshot,
+  restoreLearningData,
 } from "../db"
+import type { LearningDataSnapshot } from "../db"
 import {
   createInitialTagSrs,
   selectSessionTags,
@@ -68,6 +71,8 @@ interface Store {
   submitReviewAnswer: (question: Question, selectedIndex: number) => Promise<void>
   finishSession: () => Promise<void>
   clearData: () => Promise<void>
+  exportBackup: () => Promise<string>
+  importBackup: (json: string) => Promise<void>
   getWrongQuestions: (tag: GrammarTag) => Promise<Question[]>
 }
 
@@ -81,6 +86,11 @@ export const useStore = create<Store>((set, get) => ({
   generateError: null,
 
   init: async () => {
+    try {
+      await navigator.storage?.persist?.()
+    } catch {
+      // Persistence is an optional browser capability.
+    }
     const [srsList, attempts] = await Promise.all([
       getAllTagSrs(),
       getAllAttempts(),
@@ -308,6 +318,38 @@ export const useStore = create<Store>((set, get) => ({
     })
   },
 
+  exportBackup: async () => {
+    const data = await getLearningDataSnapshot()
+    const { sessionSize, difficultyBias } = get().settings
+    return JSON.stringify(
+      {
+        format: "weakspot-trainer-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        settings: { sessionSize, difficultyBias },
+        data,
+      },
+      null,
+      2
+    )
+  },
+
+  importBackup: async (json) => {
+    const parsed: unknown = JSON.parse(json)
+    if (!isValidBackup(parsed)) {
+      throw new Error("このファイルはWeakspot Trainerのバックアップではありません。")
+    }
+    await restoreLearningData(parsed.data)
+    const settings = {
+      ...get().settings,
+      sessionSize: parsed.settings.sessionSize,
+      difficultyBias: parsed.settings.difficultyBias,
+    }
+    saveSettings(settings)
+    set({ settings })
+    await get().init()
+  },
+
   getWrongQuestions: async (tag: GrammarTag) => {
     const { allAttempts } = get()
     const latestByQuestion = new Map<string, Attempt>()
@@ -327,6 +369,29 @@ export const useStore = create<Store>((set, get) => ({
     return questions.filter((q) => wrongIds.has(q.id))
   },
 }))
+
+interface BackupFile {
+  format: "weakspot-trainer-backup"
+  version: 1
+  settings: Pick<Settings, "sessionSize" | "difficultyBias">
+  data: LearningDataSnapshot
+}
+
+function isValidBackup(value: unknown): value is BackupFile {
+  if (!value || typeof value !== "object") return false
+  const item = value as Partial<BackupFile>
+  return (
+    item.format === "weakspot-trainer-backup" &&
+    item.version === 1 &&
+    !!item.settings &&
+    ["easy", "standard", "hard"].includes(item.settings.difficultyBias) &&
+    Number.isInteger(item.settings.sessionSize) &&
+    !!item.data &&
+    Array.isArray(item.data.questions) &&
+    Array.isArray(item.data.attempts) &&
+    Array.isArray(item.data.tagSrs)
+  )
+}
 
 async function refillPoolInBackground(
   _srsMap: Map<GrammarTag, TagSrs>,

@@ -100,6 +100,35 @@ export async function getAllAttempts(): Promise<Attempt[]> {
   return db.getAll("attempts")
 }
 
+export interface LearningDataSnapshot {
+  questions: Question[]
+  attempts: Attempt[]
+  tagSrs: TagSrs[]
+}
+
+export async function getLearningDataSnapshot(): Promise<LearningDataSnapshot> {
+  const db = await getDB()
+  const [questions, attempts, tagSrs] = await Promise.all([
+    db.getAll("questions"),
+    db.getAll("attempts"),
+    db.getAll("tagSrs"),
+  ])
+  return { questions, attempts, tagSrs }
+}
+
+export async function restoreLearningData(
+  snapshot: LearningDataSnapshot
+): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction(["questions", "attempts", "tagSrs"], "readwrite")
+  await Promise.all([
+    ...snapshot.questions.map((item) => tx.objectStore("questions").put(item)),
+    ...snapshot.attempts.map((item) => tx.objectStore("attempts").put(item)),
+    ...snapshot.tagSrs.map((item) => tx.objectStore("tagSrs").put(item)),
+  ])
+  await tx.done
+}
+
 // TagSrs
 export async function getTagSrs(tag: GrammarTag): Promise<TagSrs | undefined> {
   const db = await getDB()
